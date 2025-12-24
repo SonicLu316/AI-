@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-tw">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 錄音文字轉換 - 前端</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+    <style>
+        body { padding: 32px; background: #f8f9fa; }
+        .card { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .log-box { background: #0d1117; color: #d0d7de; min-height: 120px; font-family: "SFMono-Regular", Consolas, monospace; padding: 12px; border-radius: 6px; }
+        #root.fallback::after { content: "載入中 (若長時間空白，請檢查瀏覽器 Console 是否封鎖 CDN)"; color: #6c757d; }
+    </style>
+</head>
+<body>
+<div id="root" class="fallback"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useRef } = React;
+
+function apiBase(path) {
+    return `${window.location.origin}${path}`;
+}
+
+function App() {
+    const [file, setFile] = useState(null);
+    const [jobId, setJobId] = useState("");
+    const [status, setStatus] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState("");
+    const [log, setLog] = useState([]);
+    const pollTimer = useRef(null);
+
+    useEffect(() => () => clearTimeout(pollTimer.current), []);
+
+    const appendLog = (msg) => setLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-200));
+
+    const handleUpload = async () => {
+        if (!file) { setError("請選擇檔案"); return; }
+        setError("");
+        setUploading(true);
+        try {
+            appendLog("開始上傳...");
+            const formData = new FormData();
+            formData.append("file", file);
+            const res = await fetch(apiBase('/api/transcriptions/upload'), { method: 'POST', body: formData });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            setJobId(data.jobId);
+            appendLog(`上傳成功，JobId=${data.jobId}`);
+            pollStatus(data.jobId, true);
+        } catch (err) {
+            setError(err.message || '上傳失敗');
+            appendLog(`錯誤: ${err.message}`);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const pollStatus = async (id, immediate = false) => {
+        clearTimeout(pollTimer.current);
+        if (!id) return;
+        try {
+            if (immediate) {
+                await queryStatus(id, true);
+            } else {
+                await queryStatus(id, false);
+            }
+        } finally {
+            if (status !== 'Completed' && status !== 'Failed') {
+                pollTimer.current = setTimeout(() => pollStatus(id, false), 2500);
+            }
+        }
+    };
+
+    const queryStatus = async (id, silent) => {
+        try {
+            const res = await fetch(apiBase(`/api/transcriptions/${id}`));
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            setStatus(data);
+            setJobId(data.id);
+            if (!silent) appendLog(`狀態: ${data.status}`);
+        } catch (err) {
+            setError(err.message || '查詢失敗');
+            appendLog(`錯誤: ${err.message}`);
+        }
+    };
+
+    const handleDownload = (summary, key) => {
+        if (!jobId) return;
+        let url = apiBase(`/api/transcriptions/${jobId}/download?summary=${summary}`);
+        if (key) url += `&key=${encodeURIComponent(key)}`;
+        window.open(url, '_blank');
+    };
+
+    const renderStatus = () => {
+        if (!status) return <p className="text-muted">尚未有工作</p>;
+        const badgeClass = {
+            Pending: 'secondary',
+            Processing: 'info',
+            Completed: 'success',
+            Failed: 'danger'
+        }[status.status] || 'secondary';
+        
+        return (
+            <div className="mt-2">
+                <span className={`badge bg-${badgeClass} me-2`}>{status.status}</span>
+                <span className="text-muted">JobId: {status.id}</span>
+                {status.errorMessage && <div className="text-danger mt-2">{status.errorMessage}</div>}
+                {status.status === 'Completed' && (
+                    <div className="mt-3">
+                        <div className="mb-2 fw-bold">下載檔案：</div>
+                        <div className="d-flex gap-2 flex-wrap">
+                            {status.summaryPath && (
+                                <button className="btn btn-sm btn-success" onClick={() => handleDownload(true)}>摘要</button>
+                            )}
+                            {status.outputFiles && Object.keys(status.outputFiles).map(key => (
+                                <button key={key} className="btn btn-sm btn-outline-primary" onClick={() => handleDownload(false, key)}>
+                                    {key}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="container">
+            <div className="row g-4">
+                <div className="col-12">
+                    <h2 className="fw-bold">AI 錄音文字轉換 (React 前端)</h2>
+                    <p className="text-muted mb-0">步驟：上傳音訊 → 佇列排隊 → Buzz 轉文字 → 產出摘要 → 下載文字/摘要</p>
+                </div>
+
+                <div className="col-lg-6">
+                    <div className="card p-3">
+                        <h5>1) 上傳音訊檔</h5>
+                        <input className="form-control" type="file" accept="audio/*,video/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                        <button className="btn btn-primary mt-3" onClick={handleUpload} disabled={uploading}>
+                            {uploading ? '上傳中...' : '上傳並開始排程'}
+                        </button>
+                        {error && <div className="alert alert-danger mt-3 mb-0">{error}</div>}
+                    </div>
+                </div>
+
+                <div className="col-lg-6">
+                    <div className="card p-3">
+                        <h5>2) 查詢狀態</h5>
+                        <div className="input-group">
+                            <input className="form-control" value={jobId} onChange={(e) => setJobId(e.target.value)} placeholder="輸入 JobId" />
+                            <button className="btn btn-outline-secondary" onClick={() => pollStatus(jobId, true)}>查詢</button>
+                        </div>
+                        {renderStatus()}
+                    </div>
+                </div>
+
+                <div className="col-12">
+                    <div className="card p-3">
+                        <h5>Log</h5>
+                        <div className="log-box">
+                            {log.length === 0 ? <span className="text-muted">尚無紀錄</span> : log.map((l, idx) => <div key={idx}>{l}</div>)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+document.getElementById('root').classList.remove('fallback');
+</script>
+</body>
+</html>
