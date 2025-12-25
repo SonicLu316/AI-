@@ -1,5 +1,5 @@
-using AI¿ý­µ¤å¦rÂà´«.Models;
-using AI¿ý­µ¤å¦rÂà´«.Services;
+using AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½rï¿½à´«.Models;
+using AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½rï¿½à´«.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
@@ -14,6 +14,9 @@ builder.Services.AddSingleton<ITranscriptionQueue, TranscriptionQueue>();
 builder.Services.AddSingleton<TranscriptionStore>();
 builder.Services.AddSingleton<ITextSummarizer, DefaultTextSummarizer>();
 builder.Services.AddHostedService<TranscriptionWorker>();
+
+// Add Meeting Service
+builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 var app = builder.Build();
 
