@@ -47,7 +47,7 @@ function App() {
             appendLog("開始上傳...");
             const formData = new FormData();
             formData.append("file", file);
-            const res = await fetch(apiBase('/api/transcriptions/upload'), { method: 'POST', body: formData });
+            const res = await fetch(apiBase('/api/transcriptions/audioAdd'), { method: 'POST', body: formData });
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             setJobId(data.jobId);
@@ -79,7 +79,11 @@ function App() {
 
     const queryStatus = async (id, silent) => {
         try {
-            const res = await fetch(apiBase(`/api/transcriptions/${id}`));
+            const res = await fetch(apiBase('/api/transcriptions/transcriptionQry'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            });
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             setStatus(data);
@@ -91,11 +95,47 @@ function App() {
         }
     };
 
-    const handleDownload = (summary, key) => {
+    const handleDownload = async (summary, key) => {
         if (!jobId) return;
-        let url = apiBase(`/api/transcriptions/${jobId}/download?summary=${summary}`);
-        if (key) url += `&key=${encodeURIComponent(key)}`;
-        window.open(url, '_blank');
+        try {
+            const requestBody = {
+                id: jobId,
+                summary: summary,
+                key: key || null
+            };
+            const res = await fetch(apiBase('/api/transcriptions/transcriptionFileQry'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            if (!res.ok) throw new Error(await res.text());
+            
+            // Get filename from Content-Disposition header or use default
+            const contentDisposition = res.headers.get('Content-Disposition');
+            let filename = 'download.txt';
+            if (contentDisposition) {
+                const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+                if (matches != null && matches[1]) {
+                    filename = matches[1].replace(/['"]/g, '');
+                }
+            }
+            
+            // Create blob and download
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            appendLog(`下載完成: ${filename}`);
+        } catch (err) {
+            setError(err.message || '下載失敗');
+            appendLog(`下載錯誤: ${err.message}`);
+        }
     };
 
     const renderStatus = () => {
