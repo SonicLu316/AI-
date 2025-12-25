@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-tw">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>會議管理 - AI 錄音文字轉換</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" />
+    <style>
+        body { padding: 32px; background: #f8f9fa; }
+        .card { box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        .meeting-item { 
+            padding: 15px; 
+            border-bottom: 1px solid #e9ecef; 
+            transition: background 0.2s;
+        }
+        .meeting-item:hover { background: #f8f9fa; }
+        .meeting-item:last-child { border-bottom: none; }
+        .meeting-time { font-size: 14px; color: #6c757d; }
+        .meeting-members { font-size: 13px; color: #495057; }
+        .btn-action { margin: 2px; }
+        .modal-backdrop { background-color: rgba(0,0,0,0.5); }
+        #root.fallback::after { 
+            content: "載入中..."; 
+            color: #6c757d; 
+            display: block; 
+            text-align: center; 
+            padding: 50px; 
+        }
+    </style>
+</head>
+<body>
+<div id="root" class="fallback"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useRef } = React;
+
+function apiBase(path) {
+    return `${window.location.origin}${path}`;
+}
+
+function MeetingApp() {
+    const [meetings, setMeetings] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
+    const [pageIndex, setPageIndex] = useState(1);
+    const [pageSize] = useState(10);
+    const [searchKeyword, setSearchKeyword] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    
+    // Modal state
+    const [showModal, setShowModal] = useState(false);
+    const [editingMeeting, setEditingMeeting] = useState(null);
+    const [formData, setFormData] = useState({
+        title: '',
+        meetingTime: '',
+        location: '',
+        members: '',
+        audioFileId: null,
+        audioFileName: ''
+    });
+    
+    // Audio upload state
+    const [audioFile, setAudioFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        loadMeetings();
+    }, [pageIndex, searchKeyword]);
+
+    const loadMeetings = async () => {
+        setLoading(true);
+        setError("");
+        try {
+            const res = await fetch(apiBase('/api/meetings/query'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pageIndex: pageIndex,
+                    pageSize: pageSize,
+                    searchKeyword: searchKeyword || null
+                })
+            });
+            
+            if (!res.ok) throw new Error(await res.text());
+            
+            const data = await res.json();
+            setMeetings(data.data || []);
+            setTotalCount(data.totalCount || 0);
+        } catch (err) {
+            setError(err.message || '載入會議列表失敗');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSearch = () => {
+        setPageIndex(1);
+        loadMeetings();
+    };
+
+    const openAddModal = () => {
+        setEditingMeeting(null);
+        setFormData({
+            title: '',
+            meetingTime: new Date().toISOString().slice(0, 16),
+            location: '',
+            members: '',
+            audioFileId: null,
+            audioFileName: ''
+        });
+        setAudioFile(null);
+        setShowModal(true);
+    };
+
+    const openEditModal = (meeting) => {
+        setEditingMeeting(meeting);
+        setFormData({
+            title: meeting.title,
+            meetingTime: new Date(meeting.meetingTime).toISOString().slice(0, 16),
+            location: meeting.location,
+            members: meeting.members,
+            audioFileId: meeting.audioFileId,
+            audioFileName: meeting.audioFileName || ''
+        });
+        setAudioFile(null);
+        setShowModal(true);
+    };
+
+    const closeModal = () => {
+        setShowModal(false);
+        setEditingMeeting(null);
+        setAudioFile(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const handleFileChange = (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setAudioFile(file);
+        }
+    };
+
+    const uploadAudioFile = async () => {
+        if (!audioFile) return null;
+        
+        setUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", audioFile);
+            
+            const res = await fetch(apiBase('/api/transcriptions/audioAdd'), {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error(await res.text());
+            
+            const data = await res.json();
+            return {
+                audioFileId: data.jobId,
+                audioFileName: data.fileName
+            };
+        } catch (err) {
+            throw new Error(`音訊上傳失敗: ${err.message}`);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        if (!formData.title.trim()) {
+            setError('請輸入會議標題');
+            return;
+        }
+        if (!formData.location.trim()) {
+            setError('請輸入會議地點');
+            return;
+        }
+
+        setError("");
+        setLoading(true);
+        
+        try {
+            let audioData = {
+                audioFileId: formData.audioFileId,
+                audioFileName: formData.audioFileName
+            };
+
+            // Upload audio file if selected
+            if (audioFile) {
+                audioData = await uploadAudioFile();
+            }
+
+            const requestBody = {
+                title: formData.title,
+                meetingTime: new Date(formData.meetingTime).toISOString(),
+                location: formData.location,
+                members: formData.members,
+                audioFileId: audioData.audioFileId,
+                audioFileName: audioData.audioFileName
+            };
+
+            let url, method;
+            if (editingMeeting) {
+                url = apiBase(`/api/meetings/${editingMeeting.id}`);
+                method = 'PUT';
+            } else {
+                url = apiBase('/api/meetings');
+                method = 'POST';
+            }
+
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!res.ok) throw new Error(await res.text());
+
+            closeModal();
+            loadMeetings();
+        } catch (err) {
+            setError(err.message || '儲存會議失敗');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!confirm('確定要刪除此會議嗎？')) return;
+
+        setLoading(true);
+        setError("");
+        
+        try {
+            const res = await fetch(apiBase(`/api/meetings/${id}`), {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) throw new Error(await res.text());
+
+            loadMeetings();
+        } catch (err) {
+            setError(err.message || '刪除會議失敗');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const formatDateTime = (dateStr) => {
+        const date = new Date(dateStr);
+        return date.toLocaleString('zh-TW', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    const totalPages = Math.ceil(totalCount / pageSize);
+
+    return (
+        <div className="container">
+            <div className="row">
+                <div className="col-12">
+                    <h2 className="fw-bold mb-3">
+                        <i className="bi bi-calendar-event me-2"></i>
+                        會議管理
+                    </h2>
+                    <p className="text-muted">管理會議記錄，包含標題、時間、地點、成員和音訊檔案</p>
+                </div>
+            </div>
+
+            {error && (
+                <div className="alert alert-danger alert-dismissible fade show" role="alert">
+                    {error}
+                    <button type="button" className="btn-close" onClick={() => setError("")}></button>
+                </div>
+            )}
+
+            <div className="card p-3 mb-3">
+                <div className="row g-2 align-items-center">
+                    <div className="col-md-8">
+                        <div className="input-group">
+                            <span className="input-group-text"><i className="bi bi-search"></i></span>
+                            <input 
+                                type="text" 
+                                className="form-control" 
+                                placeholder="搜尋會議標題、地點或成員..."
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                            />
+                            <button className="btn btn-outline-secondary" onClick={handleSearch}>
+                                搜尋
+                            </button>
+                        </div>
+                    </div>
+                    <div className="col-md-4 text-end">
+                        <button className="btn btn-primary" onClick={openAddModal}>
+                            <i className="bi bi-plus-circle me-1"></i>
+                            新增會議
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header bg-white">
+                    <strong>會議列表</strong> 
+                    <span className="text-muted ms-2">(共 {totalCount} 筆)</span>
+                </div>
+                <div className="card-body p-0">
+                    {loading && meetings.length === 0 ? (
+                        <div className="text-center p-5">
+                            <div className="spinner-border text-primary" role="status">
+                                <span className="visually-hidden">載入中...</span>
+                            </div>
+                        </div>
+                    ) : meetings.length === 0 ? (
+                        <div className="text-center p-5 text-muted">
+                            <i className="bi bi-inbox" style={{fontSize: '48px'}}></i>
+                            <p className="mt-3">尚無會議記錄</p>
+                        </div>
+                    ) : (
+                        meetings.map(meeting => (
+                            <div key={meeting.id} className="meeting-item">
+                                <div className="row align-items-center">
+                                    <div className="col-md-8">
+                                        <h6 className="mb-1">
+                                            <i className="bi bi-calendar-check text-primary me-2"></i>
+                                            {meeting.title}
+                                        </h6>
+                                        <div className="meeting-time mb-1">
+                                            <i className="bi bi-clock me-1"></i>
+                                            {formatDateTime(meeting.meetingTime)}
+                                        </div>
+                                        <div className="meeting-members mb-1">
+                                            <i className="bi bi-geo-alt me-1"></i>
+                                            {meeting.location}
+                                        </div>
+                                        {meeting.members && (
+                                            <div className="meeting-members">
+                                                <i className="bi bi-people me-1"></i>
+                                                {meeting.members}
+                                            </div>
+                                        )}
+                                        {meeting.audioFileName && (
+                                            <div className="meeting-members">
+                                                <i className="bi bi-file-earmark-music me-1"></i>
+                                                {meeting.audioFileName}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="col-md-4 text-end">
+                                        <button 
+                                            className="btn btn-sm btn-outline-primary btn-action"
+                                            onClick={() => openEditModal(meeting)}
+                                        >
+                                            <i className="bi bi-pencil me-1"></i>
+                                            編輯
+                                        </button>
+                                        <button 
+                                            className="btn btn-sm btn-outline-danger btn-action"
+                                            onClick={() => handleDelete(meeting.id)}
+                                        >
+                                            <i className="bi bi-trash me-1"></i>
+                                            刪除
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+                {totalPages > 1 && (
+                    <div className="card-footer bg-white">
+                        <nav>
+                            <ul className="pagination justify-content-center mb-0">
+                                <li className={`page-item ${pageIndex === 1 ? 'disabled' : ''}`}>
+                                    <button 
+                                        className="page-link" 
+                                        onClick={() => setPageIndex(p => Math.max(1, p - 1))}
+                                        disabled={pageIndex === 1}
+                                    >
+                                        上一頁
+                                    </button>
+                                </li>
+                                <li className="page-item active">
+                                    <span className="page-link">
+                                        第 {pageIndex} / {totalPages} 頁
+                                    </span>
+                                </li>
+                                <li className={`page-item ${pageIndex === totalPages ? 'disabled' : ''}`}>
+                                    <button 
+                                        className="page-link" 
+                                        onClick={() => setPageIndex(p => Math.min(totalPages, p + 1))}
+                                        disabled={pageIndex === totalPages}
+                                    >
+                                        下一頁
+                                    </button>
+                                </li>
+                            </ul>
+                        </nav>
+                    </div>
+                )}
+            </div>
+
+            {/* Modal */}
+            {showModal && (
+                <>
+                    <div className="modal-backdrop fade show"></div>
+                    <div className="modal fade show" style={{display: 'block'}} tabIndex="-1">
+                        <div className="modal-dialog modal-lg">
+                            <div className="modal-content">
+                                <div className="modal-header">
+                                    <h5 className="modal-title">
+                                        {editingMeeting ? '編輯會議' : '新增會議'}
+                                    </h5>
+                                    <button type="button" className="btn-close" onClick={closeModal}></button>
+                                </div>
+                                <div className="modal-body">
+                                    <div className="mb-3">
+                                        <label className="form-label">會議標題 <span className="text-danger">*</span></label>
+                                        <input 
+                                            type="text" 
+                                            className="form-control"
+                                            value={formData.title}
+                                            onChange={(e) => setFormData({...formData, title: e.target.value})}
+                                            placeholder="例：專案啟動會議"
+                                        />
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">會議時間 <span className="text-danger">*</span></label>
+                                        <input 
+                                            type="datetime-local" 
+                                            className="form-control"
+                                            value={formData.meetingTime}
+                                            onChange={(e) => setFormData({...formData, meetingTime: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">會議地點 <span className="text-danger">*</span></label>
+                                        <input 
+                                            type="text" 
+                                            className="form-control"
+                                            value={formData.location}
+                                            onChange={(e) => setFormData({...formData, location: e.target.value})}
+                                            placeholder="例：會議室A"
+                                        />
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">會議成員</label>
+                                        <input 
+                                            type="text" 
+                                            className="form-control"
+                                            value={formData.members}
+                                            onChange={(e) => setFormData({...formData, members: e.target.value})}
+                                            placeholder="例：張三,李四,王五"
+                                        />
+                                        <div className="form-text">多位成員請用逗號分隔</div>
+                                    </div>
+                                    <div className="mb-3">
+                                        <label className="form-label">上傳音訊檔</label>
+                                        {formData.audioFileName && !audioFile && (
+                                            <div className="alert alert-info py-2 mb-2">
+                                                <i className="bi bi-file-earmark-music me-1"></i>
+                                                目前檔案：{formData.audioFileName}
+                                            </div>
+                                        )}
+                                        <input 
+                                            ref={fileInputRef}
+                                            type="file" 
+                                            className="form-control"
+                                            accept="audio/*,video/*"
+                                            onChange={handleFileChange}
+                                        />
+                                        <div className="form-text">支援音訊和影片檔案格式</div>
+                                    </div>
+                                </div>
+                                <div className="modal-footer">
+                                    <button type="button" className="btn btn-secondary" onClick={closeModal}>
+                                        取消
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        className="btn btn-primary" 
+                                        onClick={handleSubmit}
+                                        disabled={loading || uploading}
+                                    >
+                                        {uploading ? '上傳中...' : loading ? '儲存中...' : '儲存'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            <div className="mt-3 text-center">
+                <a href="/" className="btn btn-link">
+                    <i className="bi bi-arrow-left me-1"></i>
+                    返回首頁
+                </a>
+            </div>
+        </div>
+    );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<MeetingApp />);
+document.getElementById('root').classList.remove('fallback');
+</script>
+</body>
+</html>
