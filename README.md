@@ -322,7 +322,7 @@ pip install buzz-captions
 buzz --version
 ```
 
-詳細安裝說明請參考：[Buzz GitHub](https://github.com/chidiwilliams/buzz)
+詳細安裝說明請參考：[Buzz 官方 GitHub 儲存庫](https://github.com/chidiwilliams/buzz)
 
 ---
 
@@ -732,8 +732,6 @@ Base URL: `/api/meetings`
 
 ### 音訊轉文字頁面 (`index.html`)
 
-![Audio Transcription UI](https://via.placeholder.com/800x450?text=Audio+Transcription+Interface)
-
 **功能特色:**
 - ✅ 拖放上傳音訊檔案
 - ✅ 即時顯示轉換狀態
@@ -752,8 +750,6 @@ Base URL: `/api/meetings`
 ---
 
 ### 會議管理頁面 (`meetings.html`)
-
-![Meeting Management UI](https://via.placeholder.com/800x450?text=Meeting+Management+Interface)
 
 **功能特色:**
 - ✅ 會議列表分頁瀏覽
