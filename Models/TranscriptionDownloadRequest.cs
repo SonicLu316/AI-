@@ -6,9 +6,9 @@ namespace AI錄音文字轉換.Models;
 public class TranscriptionDownloadRequest
 {
     /// <summary>
-    /// 工作 ID
+    /// 工作 ID（10 碼短 ID）
     /// </summary>
-    public Guid Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     /// <summary>
     /// 檔案鍵值（用於選擇特定輸出檔案）

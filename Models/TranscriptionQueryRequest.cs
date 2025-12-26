@@ -6,7 +6,7 @@ namespace AI錄音文字轉換.Models;
 public class TranscriptionQueryRequest
 {
     /// <summary>
-    /// 工作 ID
+    /// 工作 ID (10-char short ID)
     /// </summary>
-    public Guid Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 }

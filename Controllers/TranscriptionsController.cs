@@ -67,11 +67,15 @@ public class TranscriptionsController : ControllerBase
             return BadRequest("No file uploaded.");
         }
 
-        Directory.CreateDirectory(_options.UploadPath);
+        var uploadPath = Path.IsPathRooted(_options.UploadPath)
+            ? _options.UploadPath
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, _options.UploadPath));
 
-        var jobId = Guid.NewGuid();
+        Directory.CreateDirectory(uploadPath);
+
         var extension = Path.GetExtension(file.FileName);
-        var storedPath = Path.Combine(_options.UploadPath, jobId + extension);
+        var shortId = Guid.NewGuid().ToString("N").Substring(0, 10);
+        var storedPath = Path.Combine(uploadPath, shortId + extension);
 
         await using (var stream = System.IO.File.Create(storedPath))
         {
@@ -80,7 +84,7 @@ public class TranscriptionsController : ControllerBase
 
         var job = new TranscriptionJob
         {
-            Id = jobId,
+            Id = shortId,
             OriginalFileName = file.FileName,
             StoredFilePath = storedPath,
             Status = TranscriptionJobStatus.Pending
@@ -105,7 +109,7 @@ public class TranscriptionsController : ControllerBase
     [HttpPost("transcriptionQry")]
     public IActionResult TranscriptionQry([FromBody] TranscriptionQueryRequest request)
     {
-        if (request is null || request.Id == Guid.Empty)
+        if (request is null || string.IsNullOrWhiteSpace(request.Id))
         {
             return BadRequest("Invalid job ID.");
         }
@@ -121,7 +125,7 @@ public class TranscriptionsController : ControllerBase
             job.OriginalFileName,
             job.Status,
             job.ErrorMessage,
-            job.OutputFiles, // Return dictionary
+            job.OutputFiles,
             job.SummaryPath,
             job.CreatedAt,
             job.CompletedAt
@@ -136,7 +140,7 @@ public class TranscriptionsController : ControllerBase
     [HttpPost("transcriptionFileQry")]
     public IActionResult TranscriptionFileQry([FromBody] TranscriptionDownloadRequest request)
     {
-        if (request is null || request.Id == Guid.Empty)
+        if (request is null || string.IsNullOrWhiteSpace(request.Id))
         {
             return BadRequest("Invalid job ID.");
         }

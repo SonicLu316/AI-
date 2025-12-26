@@ -56,4 +56,9 @@ public class BuzzProfile
     public bool OutputSrt { get; set; }
 
     public bool OutputVtt { get; set; }
+
+    /// <summary>
+    /// Enable word-level timestamps (Buzz --word-timestamps)
+    /// </summary>
+    public bool WordTimestamps { get; set; }
 }

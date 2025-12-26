@@ -12,7 +12,6 @@ builder.Services.AddControllersWithViews();
 builder.Services.Configure<BuzzOptions>(builder.Configuration.GetSection("Buzz"));
 builder.Services.AddSingleton<ITranscriptionQueue, TranscriptionQueue>();
 builder.Services.AddSingleton<TranscriptionStore>();
-builder.Services.AddSingleton<ITextSummarizer, DefaultTextSummarizer>();
 builder.Services.AddHostedService<TranscriptionWorker>();
 
 // Add Meeting Service

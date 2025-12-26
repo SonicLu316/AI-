@@ -5,7 +5,7 @@ namespace AI¿ý­µ¤å¦rÂà´«.Services;
 
 public class TranscriptionStore
 {
-    private readonly ConcurrentDictionary<Guid, TranscriptionJob> _jobs = new();
+    private readonly ConcurrentDictionary<string, TranscriptionJob> _jobs = new(StringComparer.OrdinalIgnoreCase);
 
     public TranscriptionJob Upsert(TranscriptionJob job)
     {
@@ -13,14 +13,14 @@ public class TranscriptionStore
         return job;
     }
 
-    public bool TryGet(Guid id, out TranscriptionJob? job)
+    public bool TryGet(string id, out TranscriptionJob? job)
     {
         var found = _jobs.TryGetValue(id, out var existing);
         job = existing;
         return found;
     }
 
-    public void SetStatus(Guid id, TranscriptionJobStatus status, string? error = null, Dictionary<string, string>? outputFiles = null, string? summaryPath = null)
+    public void SetStatus(string id, TranscriptionJobStatus status, string? error = null, Dictionary<string, string>? outputFiles = null, string? summaryPath = null)
     {
         if (_jobs.TryGetValue(id, out var job))
         {

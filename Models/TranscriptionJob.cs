@@ -10,7 +10,10 @@ public enum TranscriptionJobStatus
 
 public class TranscriptionJob
 {
-    public Guid Id { get; init; }
+    /// <summary>
+    /// 10-char short ID (from GUID)
+    /// </summary>
+    public string Id { get; init; } = string.Empty;
 
     public string OriginalFileName { get; init; } = string.Empty;
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Linq;
 using AI¿ý­µ¤å¦rÂà´«.Models;
 using Microsoft.Extensions.Options;
 
@@ -11,20 +12,24 @@ public class TranscriptionWorker : BackgroundService
     private readonly ITranscriptionQueue _queue;
     private readonly TranscriptionStore _store;
     private readonly BuzzOptions _options;
-    private readonly ITextSummarizer _summarizer;
 
     public TranscriptionWorker(
         ILogger<TranscriptionWorker> logger,
         ITranscriptionQueue queue,
         TranscriptionStore store,
-        IOptions<BuzzOptions> options,
-        ITextSummarizer summarizer)
+        IOptions<BuzzOptions> options)
     {
         _logger = logger;
         _queue = queue;
         _store = store;
         _options = options.Value;
-        _summarizer = summarizer;
+    }
+
+    private string ResolvePath(string path)
+    {
+        return Path.IsPathRooted(path)
+            ? path
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,25 +62,29 @@ public class TranscriptionWorker : BackgroundService
 
         try
         {
-            var processingPath = Path.Combine(_options.BuzzProcessingPath, Path.GetFileName(job.StoredFilePath));
+            var storedFilePath = ResolvePath(job.StoredFilePath);
+            var processingPath = ResolvePath(Path.Combine(_options.BuzzProcessingPath, Path.GetFileName(job.StoredFilePath)));
+            var outputDir = ResolvePath(_options.BuzzOutputPath);
             job.ProcessingFilePath = processingPath;
 
-            File.Copy(job.StoredFilePath, processingPath, overwrite: true);
+            // Move instead of copy from uploads to processing
+            if (File.Exists(processingPath)) File.Delete(processingPath);
+            File.Move(storedFilePath, processingPath);
 
-            var outputDir = _options.BuzzOutputPath;
             var profiles = _options.Profiles.Any() ? _options.Profiles : new List<BuzzProfile> { new BuzzProfile() };
             var outputPaths = new List<string>();
             var outputFilesMap = new Dictionary<string, string>();
 
             foreach (var profile in profiles)
             {
-                _logger.LogInformation("Running profile {ProfileName} for job {JobId}", profile.Name, job.Id);
+                _logger.LogInformation("Running profile {ProfileName} (ModelType={ModelType}) for job {JobId}", profile.Name, profile.ModelType, job.Id);
                 var arguments = BuildArguments(processingPath, profile);
+                var workingDir = Path.GetDirectoryName(processingPath) ?? outputDir;
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = _options.BuzzExecutablePath,
                     Arguments = arguments,
-                    WorkingDirectory = outputDir,
+                    WorkingDirectory = workingDir,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -98,25 +107,27 @@ public class TranscriptionWorker : BackgroundService
                 if (process.ExitCode != 0)
                 {
                     _logger.LogError("Buzz profile {ProfileName} exited with code {ExitCode}. stderr: {Error}", profile.Name, process.ExitCode, stderr);
-                    // Continue to next profile or fail? Let's log and continue, but mark job as failed if all fail?
-                    // For now, if any fails, we log error but try to proceed.
                 }
                 else
                 {
-                    // Find any output file (txt, srt, vtt)
-                    var outputs = FindOutputFiles(processingPath, outputDir);
-                    foreach (var outPath in outputs)
+                    var collected = CollectOutputFiles(workingDir, outputDir, profile.ModelType, job.Id, processingPath);
+                    foreach (var kv in collected)
                     {
-                        var ext = Path.GetExtension(outPath);
-                        var newPath = Path.Combine(outputDir, $"{Path.GetFileNameWithoutExtension(outPath)}_{profile.Name}{ext}");
-                        if (File.Exists(newPath)) File.Delete(newPath);
-                        File.Move(outPath, newPath);
-                        
-                        // Key: ProfileName_Extension (e.g. Transcribe_srt)
-                        outputFilesMap[$"{profile.Name}{ext}"] = newPath;
-                        outputPaths.Add(newPath);
+                        outputFilesMap[kv.Key] = kv.Value;
+                        outputPaths.Add(kv.Value);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(stdout))
+                    {
+                        _logger.LogInformation("Buzz output ({ProfileName}): {Stdout}", profile.Name, stdout.Trim());
                     }
                 }
+            }
+
+            // Remove processed audio file after transcription completes
+            if (File.Exists(processingPath))
+            {
+                try { File.Delete(processingPath); } catch { /* ignore cleanup errors */ }
             }
 
             if (outputPaths.Count == 0)
@@ -125,23 +136,7 @@ public class TranscriptionWorker : BackgroundService
                 return;
             }
 
-            // Summarize logic (pick first txt or srt)
-            var summarySource = outputPaths.FirstOrDefault(p => p.EndsWith(".txt")) ?? outputPaths.FirstOrDefault(p => p.EndsWith(".srt"));
-            string summary = "";
-            if (summarySource != null)
-            {
-                var content = await File.ReadAllTextAsync(summarySource, cancellationToken);
-                summary = await _summarizer.SummarizeAsync(content, cancellationToken);
-            }
-            
-            var summaryPath = "";
-            if (!string.IsNullOrEmpty(summary))
-            {
-                summaryPath = Path.Combine(outputDir, $"{job.Id}_summary.txt");
-                await File.WriteAllTextAsync(summaryPath, summary, cancellationToken);
-            }
-
-            _store.SetStatus(job.Id, TranscriptionJobStatus.Completed, outputFiles: outputFilesMap, summaryPath: summaryPath);
+            _store.SetStatus(job.Id, TranscriptionJobStatus.Completed, outputFiles: outputFilesMap, summaryPath: null);
             _logger.LogInformation("Job {JobId} completed. Outputs: {Outputs}", job.Id, string.Join(", ", outputFilesMap.Keys));
         }
         catch (Exception ex)
@@ -191,6 +186,11 @@ public class TranscriptionWorker : BackgroundService
             sb.Append("--vtt ");
         }
 
+        if (profile.WordTimestamps)
+        {
+            sb.Append("--word-timestamps ");
+        }
+
         if (!string.IsNullOrWhiteSpace(profile.ExtraArgs))
         {
             sb.Append(profile.ExtraArgs.Trim());
@@ -201,32 +201,47 @@ public class TranscriptionWorker : BackgroundService
         return sb.ToString();
     }
 
-    private List<string> FindOutputFiles(string processingPath, string outputDir)
+    private Dictionary<string, string> CollectOutputFiles(string workingDir, string outputDir, string modelType, string jobId, string processingPath)
     {
-        var baseName = Path.GetFileNameWithoutExtension(processingPath);
-        var extensions = new[] { ".txt", ".srt", ".vtt" };
-        var found = new List<string>();
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var allowedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".txt", ".srt", ".vtt" };
+        var processingBase = Path.GetFileNameWithoutExtension(processingPath) ?? string.Empty;
 
-        foreach (var ext in extensions)
+        if (!Directory.Exists(workingDir)) return result;
+
+        foreach (var file in Directory.EnumerateFiles(workingDir))
         {
-            var candidates = new List<string>
+            var ext = Path.GetExtension(file);
+            if (!allowedExt.Contains(ext)) continue;
+
+            // avoid moving the input itself
+            if (Path.GetFullPath(file).Equals(Path.GetFullPath(processingPath), StringComparison.OrdinalIgnoreCase))
             {
-                Path.Combine(outputDir, baseName + ext),
-                Path.Combine(Path.GetDirectoryName(processingPath) ?? outputDir, baseName + ext)
-            };
-            
-            foreach (var c in candidates)
-            {
-                if (File.Exists(c)) found.Add(c);
+                continue;
             }
+
+            var baseName = Path.GetFileNameWithoutExtension(file) ?? string.Empty;
+            if (!baseName.StartsWith(processingBase, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Rename to {jobId}_{modelType}.ext
+            var destName = $"{jobId}_{modelType}{ext}";
+            var destPath = Path.Combine(outputDir, destName);
+            if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
+            if (File.Exists(destPath)) File.Delete(destPath);
+            File.Move(file, destPath);
+
+            result[$"{modelType}{ext}"] = destPath;
         }
-        return found;
+        return result;
     }
 
     private void EnsureDirectories()
     {
-        Directory.CreateDirectory(_options.UploadPath);
-        Directory.CreateDirectory(_options.BuzzProcessingPath);
-        Directory.CreateDirectory(_options.BuzzOutputPath);
+        Directory.CreateDirectory(ResolvePath(_options.UploadPath));
+        Directory.CreateDirectory(ResolvePath(_options.BuzzProcessingPath));
+        Directory.CreateDirectory(ResolvePath(_options.BuzzOutputPath));
     }
 }
