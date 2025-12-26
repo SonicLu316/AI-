@@ -1,5 +1,5 @@
-using AI������r�ഫ.Models;
-using AI������r�ഫ.Services;
+using AI錄音文字轉換.Models;
+using AI錄音文字轉換.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;

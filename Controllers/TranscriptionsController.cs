@@ -1,45 +1,45 @@
-using AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½rï¿½à´«.Models;
-using AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½rï¿½à´«.Services;
+using AI¿ı­µ¤å¦rÂà´«.Models;
+using AI¿ı­µ¤å¦rÂà´«.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
-namespace AIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½rï¿½à´«.Controllers;
+namespace AI¿ı­µ¤å¦rÂà´«.Controllers;
 
 /// <summary>
-/// éŸ³è¨Šè½‰æ–‡å­—æ§åˆ¶å™¨
-/// æä¾›éŸ³è¨Šæª”æ¡ˆä¸Šå‚³ã€è½‰æ›ç‹€æ…‹æŸ¥è©¢å’Œçµæœä¸‹è¼‰çš„ API ç«¯é»
+/// ­µ°TÂà¤å¦r±±¨î¾¹
+/// ´£¨Ñ­µ°TÀÉ®×¤W¶Ç¡BÂà´«ª¬ºA¬d¸ß©Mµ²ªG¤U¸üªº API ºİÂI
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class TranscriptionsController : ControllerBase
 {
     /// <summary>
-    /// è½‰æ›å·¥ä½œä½‡åˆ—æœå‹™
+    /// Âà´«¤u§@¦î¦CªA°È
     /// </summary>
     private readonly ITranscriptionQueue _queue;
     
     /// <summary>
-    /// è½‰æ›å·¥ä½œå„²å­˜æœå‹™
+    /// Âà´«¤u§@Àx¦sªA°È
     /// </summary>
     private readonly TranscriptionStore _store;
     
     /// <summary>
-    /// Buzz è¨­å®šé¸é …
+    /// Buzz ³]©w¿ï¶µ
     /// </summary>
     private readonly BuzzOptions _options;
     
     /// <summary>
-    /// æ—¥èªŒè¨˜éŒ„å™¨
+    /// ¤é»x°O¿ı¾¹
     /// </summary>
     private readonly ILogger<TranscriptionsController> _logger;
 
     /// <summary>
-    /// å»ºæ§‹å­ - åˆå§‹åŒ–è½‰æ›æ§åˆ¶å™¨æ‰€éœ€çš„ç›¸ä¾æœå‹™
+    /// «Øºc¤l - ªì©l¤ÆÂà´«±±¨î¾¹©Ò»İªº¬Û¨ÌªA°È
     /// </summary>
-    /// <param name="queue">è½‰æ›å·¥ä½œä½‡åˆ—æœå‹™</param>
-    /// <param name="store">è½‰æ›å·¥ä½œå„²å­˜æœå‹™</param>
-    /// <param name="options">Buzz è¨­å®šé¸é …</param>
-    /// <param name="logger">æ—¥èªŒè¨˜éŒ„å™¨</param>
+    /// <param name="queue">Âà´«¤u§@¦î¦CªA°È</param>
+    /// <param name="store">Âà´«¤u§@Àx¦sªA°È</param>
+    /// <param name="options">Buzz ³]©w¿ï¶µ</param>
+    /// <param name="logger">¤é»x°O¿ı¾¹</param>
     public TranscriptionsController(
         ITranscriptionQueue queue,
         TranscriptionStore store,
@@ -53,11 +53,11 @@ public class TranscriptionsController : ControllerBase
     }
 
     /// <summary>
-    /// æ–°å¢éŸ³è¨Šæª”æ¡ˆä¸¦é–‹å§‹è½‰æ›æ’ç¨‹
+    /// ·s¼W­µ°TÀÉ®×¨Ã¶}©lÂà´«±Æµ{
     /// </summary>
-    /// <param name="file">ä¸Šå‚³çš„éŸ³è¨Šæˆ–å½±ç‰‡æª”æ¡ˆ</param>
-    /// <param name="cancellationToken">å–æ¶ˆä»¤ç‰Œ</param>
-    /// <returns>å›å‚³å·¥ä½œ IDã€æª”æ¡ˆåç¨±å’Œç‹€æ…‹</returns>
+    /// <param name="file">¤W¶Çªº­µ°T©Î¼v¤ùÀÉ®×</param>
+    /// <param name="cancellationToken">¨ú®ø¥OµP</param>
+    /// <returns>¦^¶Ç¤u§@ ID¡BÀÉ®×¦WºÙ©Mª¬ºA</returns>
     [HttpPost("audioAdd")]
     [RequestSizeLimit(200_000_000)] // ~200MB. Adjust in config if needed.
     public async Task<IActionResult> AudioAddAsync([FromForm] IFormFile file, CancellationToken cancellationToken)
@@ -98,10 +98,10 @@ public class TranscriptionsController : ControllerBase
     }
 
     /// <summary>
-    /// æŸ¥è©¢è½‰æ›å·¥ä½œçš„ç‹€æ…‹
+    /// ¬d¸ßÂà´«¤u§@ªºª¬ºA
     /// </summary>
-    /// <param name="request">åŒ…å«å·¥ä½œ ID çš„è«‹æ±‚ç‰©ä»¶</param>
-    /// <returns>å›å‚³å·¥ä½œç‹€æ…‹ã€æª”æ¡ˆè³‡è¨Šå’Œè¼¸å‡ºæª”æ¡ˆæ¸…å–®</returns>
+    /// <param name="request">¥]§t¤u§@ ID ªº½Ğ¨Dª«¥ó</param>
+    /// <returns>¦^¶Ç¤u§@ª¬ºA¡BÀÉ®×¸ê°T©M¿é¥XÀÉ®×²M³æ</returns>
     [HttpPost("transcriptionQry")]
     public IActionResult TranscriptionQry([FromBody] TranscriptionQueryRequest request)
     {
@@ -129,10 +129,10 @@ public class TranscriptionsController : ControllerBase
     }
 
     /// <summary>
-    /// æŸ¥è©¢ä¸¦ä¸‹è¼‰è½‰æ›å®Œæˆçš„æ–‡å­—æª”æ¡ˆæˆ–æ‘˜è¦
+    /// ¬d¸ß¨Ã¤U¸üÂà´«§¹¦¨ªº¤å¦rÀÉ®×©ÎºK­n
     /// </summary>
-    /// <param name="request">åŒ…å«å·¥ä½œ IDã€æª”æ¡ˆéµå€¼å’Œæ˜¯å¦ç‚ºæ‘˜è¦çš„è«‹æ±‚ç‰©ä»¶</param>
-    /// <returns>å›å‚³æª”æ¡ˆä¸²æµä¾›ä¸‹è¼‰</returns>
+    /// <param name="request">¥]§t¤u§@ ID¡BÀÉ®×Áä­È©M¬O§_¬°ºK­nªº½Ğ¨Dª«¥ó</param>
+    /// <returns>¦^¶ÇÀÉ®×¦ê¬y¨Ñ¤U¸ü</returns>
     [HttpPost("transcriptionFileQry")]
     public IActionResult TranscriptionFileQry([FromBody] TranscriptionDownloadRequest request)
     {
