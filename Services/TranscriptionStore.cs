@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using AI錄音文字轉換.Models;
 using Microsoft.Extensions.Options;
@@ -8,7 +7,6 @@ namespace AI錄音文字轉換.Services;
 
 public class TranscriptionStore
 {
-    private readonly ConcurrentDictionary<string, TranscriptionJob> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IConnectionMultiplexer _redis;
     private readonly IDatabase _db;
     private readonly RedisOptions _options;
@@ -47,46 +45,34 @@ public class TranscriptionStore
             // 儲存到 Redis，使用設定檔中的過期天數
             _db.StringSet(key, json, TimeSpan.FromDays(_options.ExpirationDays));
 
-            // 同時更新本地快取
-            _cache.AddOrUpdate(job.Id, job, (_, _) => job);
-
             _logger.LogDebug("已儲存工作 {JobId} 至 Redis，過期時間 {Days} 天", job.Id, _options.ExpirationDays);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "儲存工作 {JobId} 至 Redis 失敗", job.Id);
-            // 即使 Redis 失敗，仍保留在本地快取
-            _cache.AddOrUpdate(job.Id, job, (_, _) => job);
+            throw;
         }
 
         return job;
     }
 
     /// <summary>
-    /// 嘗試取得工作
+    /// 嘗試取得工作（直接從 Redis 查詢）
     /// </summary>
     public bool TryGet(string id, out TranscriptionJob? job)
     {
-        // 先從本地快取查詢
-        if (_cache.TryGetValue(id, out job))
-        {
-            return true;
-        }
-
-        // 快取沒有則從 Redis 查詢
         try
         {
             var key = GetKey(id);
             var json = _db.StringGet(key);
-            
+
             if (json.HasValue)
             {
                 job = JsonSerializer.Deserialize<TranscriptionJob>(json.ToString(), _jsonOptions);
-                
+
                 if (job != null)
                 {
-                    // 加入本地快取
-                    _cache.TryAdd(id, job);
+                    _logger.LogDebug("從 Redis 取得工作 {JobId}", id);
                     return true;
                 }
             }
