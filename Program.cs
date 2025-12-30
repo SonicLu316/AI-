@@ -3,19 +3,28 @@ using AI錄音文字轉換.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
+// 設定 Redis
+builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection("Redis"));
+var redisConnectionString = builder.Configuration["Redis:ConnectionString"] 
+    ?? throw new InvalidOperationException("Redis connection string not found.");
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnectionString));
+
+// 設定 Cleanup
+builder.Services.Configure<CleanupOptions>(builder.Configuration.GetSection("Cleanup"));
+
 builder.Services.Configure<BuzzOptions>(builder.Configuration.GetSection("Buzz"));
 builder.Services.AddSingleton<ITranscriptionQueue, TranscriptionQueue>();
 builder.Services.AddSingleton<TranscriptionStore>();
 builder.Services.AddHostedService<TranscriptionWorker>();
-
-// Add Meeting Service
-builder.Services.AddScoped<IMeetingService, MeetingService>();
+builder.Services.AddHostedService<CleanupWorker>();
 
 var app = builder.Build();
 

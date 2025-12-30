@@ -56,11 +56,15 @@ public class TranscriptionsController : ControllerBase
     /// 新增音訊檔案並開始轉換排程
     /// </summary>
     /// <param name="file">上傳的音訊或影片檔案</param>
+    /// <param name="jobId">工作 ID（由外部傳入，若未提供則自動產生）</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>回傳工作 ID、檔案名稱和狀態</returns>
     [HttpPost("audioAdd")]
     [RequestSizeLimit(200_000_000)] // ~200MB. Adjust in config if needed.
-    public async Task<IActionResult> AudioAddAsync([FromForm] IFormFile file, CancellationToken cancellationToken)
+    public async Task<IActionResult> AudioAddAsync(
+        [FromForm] IFormFile file, 
+        [FromForm] string? jobId,
+        CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
         {
@@ -74,7 +78,18 @@ public class TranscriptionsController : ControllerBase
         Directory.CreateDirectory(uploadPath);
 
         var extension = Path.GetExtension(file.FileName);
-        var shortId = Guid.NewGuid().ToString("N").Substring(0, 10);
+        
+        // 使用外部傳入的 jobId，若未提供則自動產生
+        var shortId = string.IsNullOrWhiteSpace(jobId) 
+            ? Guid.NewGuid().ToString("N")[..10] 
+            : jobId;
+        
+        // 檢查 jobId 是否已存在
+        if (_store.TryGet(shortId, out _))
+        {
+            return BadRequest($"Job ID '{shortId}' already exists.");
+        }
+        
         var storedPath = Path.Combine(uploadPath, shortId + extension);
 
         await using (var stream = System.IO.File.Create(storedPath))
